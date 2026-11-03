@@ -1,13 +1,18 @@
 package com.example.pdfreader
 
+import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.Bundle
 import android.os.ParcelFileDescriptor
+import android.speech.tts.TextToSpeech
 import android.text.InputType
 import android.view.View
 import android.widget.EditText
@@ -19,6 +24,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
+import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -51,6 +57,11 @@ class ReaderActivity : AppCompatActivity() {
     private var currentPage: Int = 0
     private var nightMode: Boolean = false
 
+    private var highlightTerms: List<String> = emptyList()
+    private val highlightCache = mutableMapOf<Int, HighlightPage>()
+    private var tts: TextToSpeech? = null
+    private var ttsReady: Boolean = false
+
     private val renderLock = Any()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var renderJob: Job? = null
@@ -77,6 +88,14 @@ class ReaderActivity : AppCompatActivity() {
         uri = Uri.parse(uriString)
         docName = intent.getStringExtra(EXTRA_NAME) ?: Storage.displayName(this, uri!!)
         toolbar.title = docName
+        highlightTerms = Storage.getHighlightTerms(this, uri!!)
+
+        tts = TextToSpeech(this) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                tts?.language = Locale.getDefault()
+                ttsReady = true
+            }
+        }
 
         toolbar.inflateMenu(R.menu.reader_menu)
         toolbar.setOnMenuItemClickListener { item ->
@@ -91,6 +110,9 @@ class ReaderActivity : AppCompatActivity() {
                     applyNightMode()
                     true
                 }
+                R.id.action_highlight -> { showHighlightDialog(); true }
+                R.id.action_read_aloud -> { readAloudPage(); true }
+                R.id.action_share -> { sharePdf(); true }
                 R.id.action_info -> { showInfo(); true }
                 else -> false
             }
@@ -154,7 +176,7 @@ class ReaderActivity : AppCompatActivity() {
         val screenWidth = resources.displayMetrics.widthPixels
         progress.visibility = View.VISIBLE
         renderJob = scope.launch {
-            val bitmap = withContext(Dispatchers.IO) {
+            val rawBitmap = withContext(Dispatchers.IO) {
                 synchronized(renderLock) {
                     val pdfRenderer = renderer ?: return@synchronized null
                     val page = try {
@@ -179,6 +201,11 @@ class ReaderActivity : AppCompatActivity() {
                         page.close()
                     }
                 }
+            }
+            val bitmap = if (rawBitmap != null && highlightTerms.isNotEmpty()) {
+                withContext(Dispatchers.IO) { applyHighlights(rawBitmap, pageToRender) }
+            } else {
+                rawBitmap
             }
             // A newer page request may have superseded this one.
             if (pageToRender != currentPage) return@launch
@@ -317,8 +344,126 @@ class ReaderActivity : AppCompatActivity() {
             .show()
     }
 
+    /** Paint saved highlight boxes over a rendered page bitmap. */
+    private fun applyHighlights(bitmap: Bitmap, pageIndex: Int): Bitmap {
+        val docUri = uri ?: return bitmap
+        return try {
+            val page = highlightCache[pageIndex]
+                ?: TextHighlighter.highlightsForPage(this, docUri, pageIndex, highlightTerms)
+                    ?.also { highlightCache[pageIndex] = it }
+                ?: return bitmap
+            if (page.rects.isEmpty()) return bitmap
+            val scaleX = bitmap.width / page.pageWidth
+            val scaleY = bitmap.height / page.pageHeight
+            val canvas = Canvas(bitmap)
+            val paint = Paint().apply {
+                color = Color.argb(120, 255, 235, 59)
+                style = Paint.Style.FILL
+            }
+            page.rects.forEach { rect ->
+                canvas.drawRect(
+                    rect.left * scaleX, rect.top * scaleY,
+                    rect.right * scaleX, rect.bottom * scaleY,
+                    paint
+                )
+            }
+            bitmap
+        } catch (e: Exception) {
+            bitmap
+        }
+    }
+
+    private fun showHighlightDialog() {
+        val docUri = uri ?: return
+        val input = EditText(this).apply {
+            hint = "Word or phrase to highlight"
+            inputType = InputType.TYPE_CLASS_TEXT
+            setPadding(48, 32, 48, 8)
+        }
+        val current = if (highlightTerms.isEmpty()) {
+            "No highlights yet for this document. Add a word or phrase and every match will be marked in yellow, on every page."
+        } else {
+            "Current highlights:\n" + highlightTerms.joinToString(", ")
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Highlight text")
+            .setMessage(current)
+            .setView(input)
+            .setNegativeButton("Cancel", null)
+            .setNeutralButton("Clear all") { _, _ ->
+                Storage.clearHighlightTerms(this, docUri)
+                highlightTerms = emptyList()
+                highlightCache.clear()
+                showPage(currentPage)
+                Toast.makeText(this, "Highlights cleared", Toast.LENGTH_SHORT).show()
+            }
+            .setPositiveButton("Add") { _, _ ->
+                val term = input.text.toString().trim()
+                if (term.isNotEmpty()) {
+                    Storage.addHighlightTerm(this, docUri, term)
+                    highlightTerms = Storage.getHighlightTerms(this, docUri)
+                    highlightCache.clear()
+                    showPage(currentPage)
+                    Toast.makeText(
+                        this,
+                        "\"$term\" will be highlighted in this document",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+            .show()
+    }
+
+    private fun readAloudPage() {
+        val docUri = uri ?: return
+        val engine = tts
+        if (engine == null || !ttsReady) {
+            Toast.makeText(this, "Read aloud is not ready yet", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (engine.isSpeaking) {
+            engine.stop()
+            Toast.makeText(this, "Stopped reading", Toast.LENGTH_SHORT).show()
+            return
+        }
+        Toast.makeText(this, "Reading page ${currentPage + 1}…", Toast.LENGTH_SHORT).show()
+        scope.launch {
+            val text = try {
+                withContext(Dispatchers.IO) {
+                    SearchHelper.pageText(this@ReaderActivity, docUri, currentPage)
+                }
+            } catch (e: Exception) {
+                ""
+            }
+            if (text.isBlank()) {
+                Toast.makeText(
+                    this@ReaderActivity,
+                    "No readable text on this page. Scanned PDFs can't be read aloud.",
+                    Toast.LENGTH_LONG
+                ).show()
+            } else {
+                engine.speak(text.take(3800), TextToSpeech.QUEUE_FLUSH, null, "reader_page")
+            }
+        }
+    }
+
+    private fun sharePdf() {
+        val docUri = uri ?: return
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/pdf"
+            putExtra(Intent.EXTRA_STREAM, docUri)
+            putExtra(Intent.EXTRA_SUBJECT, docName)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(intent, "Share PDF"))
+    }
+
     override fun onDestroy() {
         scope.cancel()
+        try {
+            tts?.stop()
+            tts?.shutdown()
+        } catch (e: Exception) { /* engine already gone */ }
         synchronized(renderLock) {
             try { renderer?.close() } catch (e: Exception) { /* already closed */ }
             try { fileDescriptor?.close() } catch (e: Exception) { /* already closed */ }

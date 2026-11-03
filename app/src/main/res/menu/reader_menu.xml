@@ -17,6 +17,15 @@
         android:checkable="true"
         android:title="Night mode" />
     <item
+        android:id="@+id/action_highlight"
+        android:title="Highlight text" />
+    <item
+        android:id="@+id/action_read_aloud"
+        android:title="Read page aloud" />
+    <item
+        android:id="@+id/action_share"
+        android:title="Share PDF" />
+    <item
         android:id="@+id/action_info"
         android:title="Document info" />
 </menu>

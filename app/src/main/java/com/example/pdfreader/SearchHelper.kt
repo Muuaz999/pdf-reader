@@ -38,4 +38,22 @@ object SearchHelper {
         }
         return results
     }
+
+    /** Extract the text of a single 0-based page (for read-aloud). Background thread only. */
+    fun pageText(context: Context, uri: Uri, pageIndex: Int): String {
+        if (!initialized) {
+            PDFBoxResourceLoader.init(context.applicationContext)
+            initialized = true
+        }
+        val input = context.contentResolver.openInputStream(uri) ?: return ""
+        input.use { stream ->
+            PDDocument.load(stream).use { document ->
+                if (pageIndex !in 0 until document.numberOfPages) return ""
+                val stripper = PDFTextStripper()
+                stripper.startPage = pageIndex + 1
+                stripper.endPage = pageIndex + 1
+                return stripper.getText(document).trim()
+            }
+        }
+    }
 }

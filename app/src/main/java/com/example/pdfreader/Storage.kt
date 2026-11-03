@@ -13,6 +13,7 @@ object Storage {
     private const val KEY_RECENTS = "recents_json"
     private const val KEY_LAST_PAGES = "last_pages_json"
     private const val KEY_BOOKMARKS = "bookmarks_json"
+    private const val KEY_HIGHLIGHTS = "highlights_json"
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -109,4 +110,28 @@ object Storage {
 
     fun isBookmarked(context: Context, uri: Uri, page: Int): Boolean =
         getBookmarks(context, uri).contains(page)
+
+    // ---- Highlight terms per document ----
+
+    fun getHighlightTerms(context: Context, uri: Uri): List<String> {
+        val raw = readMap(context, KEY_HIGHLIGHTS).optJSONArray(uri.toString())
+            ?: return emptyList()
+        return List(raw.length()) { raw.optString(it) }.filter { it.isNotBlank() }
+    }
+
+    fun addHighlightTerm(context: Context, uri: Uri, term: String) {
+        val current = getHighlightTerms(context, uri).toMutableList()
+        if (current.none { it.equals(term, ignoreCase = true) }) current.add(term)
+        val map = readMap(context, KEY_HIGHLIGHTS)
+        val array = JSONArray()
+        current.forEach { array.put(it) }
+        map.put(uri.toString(), array)
+        writeMap(context, KEY_HIGHLIGHTS, map)
+    }
+
+    fun clearHighlightTerms(context: Context, uri: Uri) {
+        val map = readMap(context, KEY_HIGHLIGHTS)
+        map.remove(uri.toString())
+        writeMap(context, KEY_HIGHLIGHTS, map)
+    }
 }
