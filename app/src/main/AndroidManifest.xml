@@ -10,8 +10,9 @@
         android:theme="@style/Theme.PDFReader">
 
         <activity
-            android:name=".MainActivity"
-            android:exported="true">
+            android:name=".SplashActivity"
+            android:exported="true"
+            android:theme="@style/Theme.PDFReader">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -19,9 +20,33 @@
         </activity>
 
         <activity
+            android:name=".MainActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ReaderActivity"
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <activity
+            android:name=".ImagesToPdfActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".MergePdfActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".SplitPdfActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".PdfToImageActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".CompressImageActivity"
+            android:exported="false" />
     </application>
 
 </manifest>

@@ -185,6 +185,9 @@ class ReaderActivity : AppCompatActivity() {
             progress.visibility = View.GONE
             if (bitmap != null) {
                 imgPage.setImageBitmap(bitmap)
+                // Gentle fade-in each time a page appears.
+                imgPage.alpha = 0.3f
+                imgPage.animate().alpha(1f).setDuration(220).start()
             } else {
                 Toast.makeText(this@ReaderActivity, "Could not render page", Toast.LENGTH_SHORT)
                     .show()
