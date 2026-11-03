@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/action_search"
+        android:title="Search" />
+    <item
+        android:id="@+id/action_goto"
+        android:title="Go to page" />
+    <item
+        android:id="@+id/action_bookmark_toggle"
+        android:title="Bookmark this page" />
+    <item
+        android:id="@+id/action_bookmarks"
+        android:title="Bookmarks" />
+    <item
+        android:id="@+id/action_night"
+        android:checkable="true"
+        android:title="Night mode" />
+    <item
+        android:id="@+id/action_info"
+        android:title="Document info" />
+</menu>

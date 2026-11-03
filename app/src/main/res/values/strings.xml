@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PDF Reader</string>
+    <string name="open_pdf">Open PDF</string>
+    <string name="recent_documents">Recent documents</string>
+    <string name="no_recents">No recent documents yet.\nOpen a PDF to get started.</string>
+</resources>
